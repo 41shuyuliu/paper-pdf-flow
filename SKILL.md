@@ -5,8 +5,8 @@ description: Build a structured paper workflow note from an uploaded PDF. Use wh
 
 # Paper PDF Flow Skill
 
-Use this skill to convert one paper PDF into a compact, figure-driven markdown note.
-Default behavior is to generate an auto-polished final note (`--mode final`) in the fixed structure:
+使用本技能可将单篇论文 PDF 转换为“按图梳理”的结构化 Markdown 笔记。
+默认生成“自动最终版”（`--mode final`），固定结构如下：
 - `# <pdf_stem> 极简梳理`
 - `## 文献信息`
 - `## 这篇论文要解决什么问题`
@@ -15,44 +15,46 @@ Default behavior is to generate an auto-polished final note (`--mode final`) in 
 
 ## Workflow
 
-1. Validate input PDF exists.
-2. Run `scripts/pdf_to_flow_note.py` to generate a final markdown (`--mode final` by default).
-3. Optionally run a quick manual check:
-- verify title, DOI, and figure order;
-- patch missing timeline/group/statistics details if extraction is incomplete.
-4. Save exactly one final note file to the provided output path.
+1. 校验输入 PDF 是否存在。
+2. 执行 `scripts/pdf_to_flow_note.py` 生成最终版 Markdown（默认 `--mode final`）。
+3. 可选人工快检：
+- 核对标题、DOI、图序；
+- 若提取不完整，补充时间线、分组与统计细节。
+4. 仅输出到 `--out` 指定路径。
 
 ## Single-File Contract (Strict)
 
-- Treat `--out` as the only output target.
-- Overwrite `--out` when regenerating.
-- Do not create any side outputs or copies, including:
+- `--out` 是唯一输出目标。
+- 再次生成时覆盖 `--out`。
+- 禁止创建任何副本或镜像文件，包括：
   - `README.md` mirror files,
   - `*_backup.md`,
   - `*_en.md`,
   - `*_copy.md`,
   - `同步副本` or any duplicate note.
-- If translation or comparison is needed, reuse the same `--out` path and overwrite in place.
+- 如需翻译或重写，也必须复用同一 `--out` 路径覆盖写入。
 
 ## Commands
 
 ```powershell
-& 'D:\Python\Environments\pytorch\Scripts\python.exe' .\paper_pdf_flow_skill\scripts\pdf_to_flow_note.py `
+python .\scripts\pdf_to_flow_note.py `
   --pdf "path\to\paper.pdf" `
   --out "path\to\README.md" `
   --lang zh `
   --mode final
 ```
 
+若系统使用 `python3`，将 `python` 替换为 `python3`。
+若存在多 Python 环境，建议显式指定解释器路径后再执行。
+
 ## Output Contract
 
-The generated markdown must contain at least:
-- Paper metadata (title/journal-like line/DOI if found)
-- One-sentence objective
-- Figure-driven flow (`Fig.1 -> Fig.N`)
-- Key design signals (timepoints, doses, groups, metrics) if detectable
-- Main conclusion + caution boundary
-- Single-file output only (no duplicate files)
+生成结果至少包含：
+- 文献元信息（标题/期刊线索/DOI，若可识别）
+- 问题定义
+- 按图流程（`Fig.1 -> Fig.N`）
+- 关键结论（一句话）
+- 单文件输出（禁止副本）
 
-For long or noisy PDFs, run a short fact-check pass after generation.
-Use `--mode draft` only when you explicitly want a lightweight draft.
+对于排版复杂或噪声较高 PDF，建议在生成后做一次快速事实核对。
+仅在你明确需要轻量草稿时使用 `--mode draft`。
