@@ -25,7 +25,7 @@
    - `python -m pip install -r requirements.txt`
    - 如果系统使用 `python3`，改为 `python3 -m pip install -r requirements.txt`
 6. 重启/刷新 Codex 会话。
-7. 在对话里调用（把尖括号内路径换成自己的）：
+7. 在对话里调用（把尖括号内路径和文件名字换成自己的）：
    ```text
    请调用技能 $paper-pdf-flow 处理论文 PDF，并输出最终版中文流程笔记。
    输入 PDF：<path\to\paper.pdf>

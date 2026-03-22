@@ -1,9 +1,9 @@
 ---
 name: paper-pdf-flow
-description: Build a structured paper workflow note from an uploaded PDF. Use when the user asks to summarize a paper by figures, generate a minimal README note, extract an end-to-end experimental flow, or convert a paper PDF into a reusable markdown record for project folders.
+description: 将上传的论文 PDF 生成结构化“按图梳理”笔记。适用于按图总结论文、生成最小化 README、提取端到端实验流程、或将论文 PDF 转为可复用 markdown 记录。
 ---
 
-# Paper PDF Flow Skill
+# 论文 PDF 流程技能
 
 使用本技能可将单篇论文 PDF 转换为“按图梳理”的结构化 Markdown 笔记。
 默认生成“自动最终版”（`--mode final`），固定结构如下：
@@ -13,7 +13,7 @@ description: Build a structured paper workflow note from an uploaded PDF. Use wh
 - `## 按图看整篇流程（Fig.1~Fig.N）`
 - `## 关键结论（一句话）`
 
-## Workflow
+## 执行流程
 
 1. 校验输入 PDF 是否存在。
 2. 执行 `scripts/pdf_to_flow_note.py` 生成最终版 Markdown（默认 `--mode final`）。
@@ -22,19 +22,19 @@ description: Build a structured paper workflow note from an uploaded PDF. Use wh
 - 若提取不完整，补充时间线、分组与统计细节。
 4. 仅输出到 `--out` 指定路径。
 
-## Single-File Contract (Strict)
+## 单文件输出约束（严格）
 
 - `--out` 是唯一输出目标。
 - 再次生成时覆盖 `--out`。
 - 禁止创建任何副本或镜像文件，包括：
-  - `README.md` mirror files,
+  - `README.md` 镜像文件，
   - `*_backup.md`,
   - `*_en.md`,
   - `*_copy.md`,
-  - `同步副本` or any duplicate note.
+  - `同步副本` 或其他重复笔记。
 - 如需翻译或重写，也必须复用同一 `--out` 路径覆盖写入。
 
-## Commands
+## 命令示例
 
 ```powershell
 python .\scripts\pdf_to_flow_note.py `
@@ -47,7 +47,7 @@ python .\scripts\pdf_to_flow_note.py `
 若系统使用 `python3`，将 `python` 替换为 `python3`。
 若存在多 Python 环境，建议显式指定解释器路径后再执行。
 
-## Output Contract
+## 输出要求
 
 生成结果至少包含：
 - 文献元信息（标题/期刊线索/DOI，若可识别）
