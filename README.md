@@ -2,18 +2,8 @@
 
 将论文 PDF 自动整理为“文献内容速览、按图梳理流程”的 Markdown 笔记。
 
-## 这个仓库是什么
-- 这是一个 **Skill + 脚本核心** 项目。
-- 用法：通过 Skill 接入 LLM/Agent 调用。
 
-
-## 目录结构
-- `SKILL.md`：技能触发说明与执行约束（单文件输出、固定结构）。
-- `scripts/pdf_to_flow_note.py`：核心脚本。
-- `assets/minimal_flow_template_zh.md`：输出模板参考。
-- `requirements.txt`：脚本依赖列表（当前至少需要 `pypdf`）。
-
-## 如何接入Codex
+## Codex用法
 1. 在 GitHub 仓库页面点击 `Code -> Download ZIP` 下载压缩包并解压。
 2. 将解压后的 `paper-pdf-flow` 整个目录放到 Codex skills 目录：
    - `C:\Users\<you>\.codex\skills\`
@@ -35,14 +25,31 @@
    要求：严格输出固定5段结构（极简梳理/文献信息/要解决什么问题/按图流程/关键结论）。
    ```
 
+## 插件用法
+1. 在 GitHub 仓库页面点击 `Code -> Download ZIP` 下载压缩包并解压。
+2. 打开 `chrome://extensions/`
+3. 开启“开发者模式”并加载解压后 `paper-pdf-flow` 文件夹的 `extension/` 目录
+3. 点击插件，进入 `API配置`
+4. 填写地址、API 密钥、模型名字，点击“确认保存”
+5. 返回主页面，选择 PDF，填写输出文件名，点击“开始生成”
 
-## 输出固定结构（默认 `--mode final`）
+## 输出固定结构
 1. `# <pdf_stem> 极简梳理`
 2. `## 文献信息`
 3. `## 这篇论文要解决什么问题`
 4. `## 按图看整篇流程（Fig.1~Fig.N）`
 5. `## 关键结论（一句话）`
 
-## 适配不同 IDE
+
+## skill适配不同 IDE
 - 让你的agent对压缩包进行处理，自行配置和使用即可。
 
+
+## 目录结构
+- `SKILL.md`：技能触发说明与执行约束。
+- `scripts/pdf_to_flow_note.py`：本地启发式生成脚本。
+- `extension/`：Chrome 插件目录
+- `backend/`：后端 MVP。
+- `docs/`：架构设计与接口契约说明。
+- `assets/minimal_flow_template_zh.md`：输出模板参考。
+- `requirements.txt`：脚本依赖列表
