@@ -2,13 +2,27 @@ import { GlobalWorkerOptions, getDocument } from "./vendor/pdf.min.mjs";
 
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
 
+const API_SETTINGS_KEY = "paper_pdf_flow_api_settings";
+const API_VALIDATE_STATE_KEY = "paper_pdf_flow_api_validate_state";
+
 const refs = {
+  captureView: document.getElementById("captureView"),
+  settingsView: document.getElementById("settingsView"),
   pdfFile: document.getElementById("pdfFile"),
   outputName: document.getElementById("outputName"),
   startBtn: document.getElementById("startBtn"),
+  apiSettingsBtn: document.getElementById("apiSettingsBtn"),
   statusLine: document.getElementById("statusLine"),
   progressBar: document.getElementById("progressBar"),
   metaLine: document.getElementById("metaLine"),
+  apiBaseUrl: document.getElementById("apiBaseUrl"),
+  apiKey: document.getElementById("apiKey"),
+  modelName: document.getElementById("modelName"),
+  saveApiBtn: document.getElementById("saveApiBtn"),
+  backBtn: document.getElementById("backBtn"),
+  configState: document.getElementById("configState"),
+  stateIcon: document.getElementById("stateIcon"),
+  stateText: document.getElementById("stateText"),
 };
 
 function shouldResetOnOpen() {
@@ -30,6 +44,288 @@ function normalizeText(text) {
 
 function safeText(value) {
   return String(value || "").trim();
+}
+
+function showElement(el) {
+  if (el) {
+    el.classList.remove("hidden");
+  }
+}
+
+function hideElement(el) {
+  if (el) {
+    el.classList.add("hidden");
+  }
+}
+
+function showCaptureView() {
+  showElement(refs.captureView);
+  hideElement(refs.settingsView);
+}
+
+function showSettingsView() {
+  showElement(refs.settingsView);
+  hideElement(refs.captureView);
+}
+
+function setConfigState(kind, text) {
+  const klasses = ["success", "failure", "loading"];
+  refs.configState.classList.remove(...klasses);
+  if (kind) {
+    refs.configState.classList.add(kind);
+  }
+
+  refs.stateText.textContent = safeText(text) || "请先保存并测试连接";
+  if (kind === "success") {
+    refs.stateIcon.textContent = "✓";
+  } else if (kind === "failure") {
+    refs.stateIcon.textContent = "!";
+  } else if (kind === "loading") {
+    refs.stateIcon.textContent = "";
+  } else {
+    refs.stateIcon.textContent = "·";
+  }
+}
+
+function readApiSettingsInputs() {
+  return {
+    baseUrl: safeText(refs.apiBaseUrl.value),
+    apiKey: safeText(refs.apiKey.value),
+    model: safeText(refs.modelName.value),
+  };
+}
+
+function fillApiSettingsInputs(data) {
+  refs.apiBaseUrl.value = safeText(data && data.baseUrl ? data.baseUrl : "");
+  refs.apiKey.value = safeText(data && data.apiKey ? data.apiKey : "");
+  refs.modelName.value = safeText(data && data.model ? data.model : "");
+}
+
+function normalizeApiSettings(data) {
+  return {
+    baseUrl: safeText(data && data.baseUrl ? data.baseUrl : ""),
+    apiKey: safeText(data && data.apiKey ? data.apiKey : ""),
+    model: safeText(data && data.model ? data.model : ""),
+  };
+}
+
+function validateApiSettingsPayload(payload) {
+  if (!payload.baseUrl) {
+    return "请填写地址";
+  }
+  if (!payload.apiKey) {
+    return "请填写 API 密钥";
+  }
+  if (!payload.model) {
+    return "请填写模型名字";
+  }
+  return "";
+}
+
+function stripMarkdownFence(raw) {
+  const trimmed = safeText(raw);
+  const fenced = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? safeText(fenced[1]) : trimmed;
+}
+
+function extractResponseText(respJson) {
+  if (typeof respJson?.output_text === "string" && safeText(respJson.output_text)) {
+    return safeText(respJson.output_text);
+  }
+
+  if (Array.isArray(respJson?.output)) {
+    const chunks = [];
+    respJson.output.forEach((item) => {
+      if (!Array.isArray(item?.content)) {
+        return;
+      }
+      item.content.forEach((contentItem) => {
+        if (typeof contentItem?.text === "string") {
+          chunks.push(contentItem.text);
+        }
+      });
+    });
+    return safeText(chunks.join("\n"));
+  }
+
+  return "";
+}
+
+function buildResponsesEndpoint(baseUrl) {
+  const trimmed = safeText(baseUrl).replace(/\/+$/, "");
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.endsWith("/responses")) {
+    return trimmed;
+  }
+  if (trimmed.endsWith("/v1")) {
+    return `${trimmed}/responses`;
+  }
+  return `${trimmed}/v1/responses`;
+}
+
+async function requestValidateConfig(payload) {
+  const endpoint = buildResponsesEndpoint(payload.baseUrl);
+  let resp;
+
+  try {
+    resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${payload.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: payload.model,
+        store: false,
+        max_output_tokens: 16,
+        input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],
+      }),
+    });
+  } catch (_error) {
+    throw new Error("验证请求失败");
+  }
+
+  if (!resp.ok) {
+    throw new Error(`验证失败（HTTP ${resp.status}）`);
+  }
+}
+
+async function loadApiSettings() {
+  const result = await chrome.storage.local.get([API_SETTINGS_KEY, API_VALIDATE_STATE_KEY]);
+  const saved = normalizeApiSettings(result[API_SETTINGS_KEY] || {});
+  fillApiSettingsInputs(saved);
+
+  if (result[API_VALIDATE_STATE_KEY] === "success") {
+    setConfigState("success", saved.model || "配置验证成功");
+    return;
+  }
+  if (result[API_VALIDATE_STATE_KEY] === "failure") {
+    setConfigState("failure", "最近一次测试连接失败");
+    return;
+  }
+  setConfigState("", "请先保存并测试连接");
+}
+
+async function getValidatedApiSettings() {
+  const result = await chrome.storage.local.get([API_SETTINGS_KEY, API_VALIDATE_STATE_KEY]);
+  const saved = normalizeApiSettings(result[API_SETTINGS_KEY] || {});
+  const message = validateApiSettingsPayload(saved);
+  if (message) {
+    throw new Error("请先完成 API 配置");
+  }
+  if (result[API_VALIDATE_STATE_KEY] !== "success") {
+    throw new Error("请先在 API 配置中测试连接");
+  }
+  return saved;
+}
+
+async function saveApiSettings() {
+  const payload = readApiSettingsInputs();
+  const message = validateApiSettingsPayload(payload);
+  if (message) {
+    setConfigState("failure", message);
+    return;
+  }
+
+  await chrome.storage.local.set({ [API_SETTINGS_KEY]: payload });
+  setConfigState("loading", "正在测试接口连接...");
+
+  try {
+    await requestValidateConfig(payload);
+    await chrome.storage.local.set({ [API_VALIDATE_STATE_KEY]: "success" });
+    setConfigState("success", payload.model || "配置验证成功");
+  } catch (error) {
+    await chrome.storage.local.set({ [API_VALIDATE_STATE_KEY]: "failure" });
+    setConfigState("failure", error instanceof Error ? error.message : String(error || "配置验证失败"));
+  }
+}
+
+function buildModelPrompts({ pdfName, parsed, localDraft }) {
+  const title = extractTitle(parsed.fullText, parsed.firstPageRaw);
+  const doi = extractDoi(parsed.fullText, parsed.firstPageRaw);
+  const journal = zhExtractJournalLine(parsed.fullText);
+  const figs = extractFigCaptions(parsed.fullTextRaw);
+  const signals = extractSignals(parsed.fullText);
+  const excerptHead = safeText(parsed.fullText).slice(0, 18000);
+  const excerptTail = parsed.fullText.length > 22000 ? safeText(parsed.fullText).slice(-4000) : "";
+  const payload = {
+    file_name: pdfName,
+    pages: parsed.pages,
+    title_guess: title,
+    journal_guess: journal,
+    doi_guess: doi,
+    figures: figs.map(([no, caption]) => ({ figure: `Fig.${no}`, caption })),
+    signals,
+    body_excerpt_head: excerptHead,
+    body_excerpt_tail: excerptTail,
+    heuristic_draft: localDraft,
+  };
+
+  const systemPrompt = [
+    "你是论文 PDF 结构化整理助手。",
+    "你的任务是基于本地解析得到的论文文本、图注和启发式草稿，输出一份高质量中文 Markdown 笔记。",
+    "只输出 Markdown，不要解释，不要 JSON，不要代码块。",
+    "必须严格使用以下固定结构和标题：",
+    "# <pdf_stem> 极简梳理",
+    "## 文献信息",
+    "## 这篇论文要解决什么问题",
+    "## 按图看整篇流程（Fig.1~Fig.N）",
+    "## 关键结论（一句话）",
+    "如果信息不确定，请明确写“未自动识别（建议手动补充）”。",
+    "尽量利用图注恢复论文流程，不要编造正文中不存在的实验细节。",
+  ].join("\n");
+
+  const userPrompt = [
+    "请根据下面的 PDF 本地解析结果，生成最终中文 Markdown。",
+    "输出要求：",
+    "1. 只输出 Markdown 正文。",
+    "2. 文风简洁、准确、偏科研笔记。",
+    "3. “按图看整篇流程”部分优先逐图总结，若图注不足可结合正文摘录补足。",
+    "4. “关键结论（一句话）”必须只有一个列表项。",
+    "",
+    JSON.stringify(payload, null, 2),
+  ].join("\n");
+
+  return { systemPrompt, userPrompt };
+}
+
+async function requestMarkdownFromModel(config, prompts) {
+  const endpoint = buildResponsesEndpoint(config.baseUrl);
+  let resp;
+
+  try {
+    resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        store: false,
+        max_output_tokens: 3200,
+        input: [
+          { role: "system", content: [{ type: "input_text", text: prompts.systemPrompt }] },
+          { role: "user", content: [{ type: "input_text", text: prompts.userPrompt }] },
+        ],
+      }),
+    });
+  } catch (_error) {
+    throw new Error("模型请求失败");
+  }
+
+  if (!resp.ok) {
+    throw new Error(`模型请求失败（HTTP ${resp.status}）`);
+  }
+
+  const data = await resp.json();
+  const text = stripMarkdownFence(extractResponseText(data));
+  if (!text) {
+    throw new Error("模型返回为空");
+  }
+  return text;
 }
 
 function setStatus(text, kind = "") {
@@ -56,6 +352,7 @@ function setRunning(running) {
   refs.startBtn.disabled = disabled;
   refs.pdfFile.disabled = disabled;
   refs.outputName.disabled = disabled;
+  refs.apiSettingsBtn.disabled = disabled;
 }
 
 function ensurePdfFile(file) {
@@ -529,20 +826,25 @@ async function handleStart() {
 
     const file = refs.pdfFile.files && refs.pdfFile.files[0] ? refs.pdfFile.files[0] : null;
     ensurePdfFile(file);
+    const apiConfig = await getValidatedApiSettings();
     const outputName = validateOutputName(refs.outputName.value) || defaultOutputName(file.name);
 
-    setProgress(0.1);
+    setProgress(0.12);
     setStatus("正在读取 PDF...");
     setMeta(`文件=${file.name}`);
     await sleep(30);
 
     const parsed = await readPdfText(file);
-    setProgress(0.6);
-    setStatus("正在生成 Markdown...");
-    setMeta(`页数=${parsed.pages} | 语言=中文 | 模式=最终版`);
+    if (safeText(parsed.fullText).length < 80) {
+      throw new Error("PDF 文本提取过少，暂时无法调用模型生成");
+    }
+
+    setProgress(0.42);
+    setStatus("正在整理论文内容...");
+    setMeta(`页数=${parsed.pages} | 模型=${apiConfig.model}`);
     await sleep(30);
 
-    const md = buildMarkdown({
+    const localDraft = buildMarkdown({
       pdfName: file.name,
       fullText: parsed.fullText,
       pages: parsed.pages,
@@ -550,13 +852,22 @@ async function handleStart() {
       fullTextRaw: parsed.fullTextRaw,
     });
 
-    setProgress(0.9);
+    setProgress(0.68);
+    setStatus("正在调用模型生成...");
+    await sleep(30);
+
+    const md = await requestMarkdownFromModel(
+      apiConfig,
+      buildModelPrompts({ pdfName: file.name, parsed, localDraft })
+    );
+
+    setProgress(0.92);
     setStatus("正在准备下载...");
     await sleep(30);
     triggerDownload(md, outputName);
     setProgress(1.0);
     setStatus("完成，Markdown 已下载。", "success");
-    setMeta(`输出=${outputName}`);
+    setMeta(`输出=${outputName} | 生成方式=API`);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error || "未知错误");
     setStatus(msg, "error");
@@ -571,14 +882,23 @@ async function bootstrap() {
       refs.pdfFile.value = "";
       refs.outputName.value = "";
     }
+    showCaptureView();
     setStatus("空闲");
-    setMeta(shouldResetOnOpen() ? "已重置，等待新任务" : "就绪（本地模式）");
+    setMeta(shouldResetOnOpen() ? "已重置，等待新任务" : "就绪（API 生成模式）");
     setProgress(0);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error || "初始化失败");
     setStatus(msg, "error");
   }
   refs.startBtn.addEventListener("click", handleStart);
+  refs.apiSettingsBtn.addEventListener("click", async () => {
+    await loadApiSettings();
+    showSettingsView();
+  });
+  refs.saveApiBtn.addEventListener("click", saveApiSettings);
+  refs.backBtn.addEventListener("click", () => {
+    showCaptureView();
+  });
 }
 
 bootstrap();

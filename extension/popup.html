@@ -39,6 +39,10 @@
         padding: 10px;
       }
 
+      .hidden {
+        display: none;
+      }
+
       h1 {
         margin: 0 0 8px;
         font-size: 16px;
@@ -77,6 +81,11 @@
       button[disabled] {
         opacity: 0.65;
         cursor: not-allowed;
+      }
+
+      .secondary-btn {
+        background: #eef3fb;
+        color: #234266;
       }
 
       .status-box {
@@ -124,25 +133,116 @@
         color: var(--muted);
         min-height: 16px;
       }
+
+      .config-state {
+        margin-top: 10px;
+        border-radius: 10px;
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--line);
+        background: #fbfcff;
+      }
+
+      .config-state.success {
+        border-color: #18a957;
+        background: #e9f9ef;
+      }
+
+      .config-state.failure {
+        border-color: #d93f3f;
+        background: #fdecec;
+      }
+
+      .config-state.loading {
+        border-color: #0b63d8;
+        background: #edf4ff;
+      }
+
+      .state-icon {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        background: #9aa7b4;
+        flex: 0 0 auto;
+      }
+
+      .config-state.success .state-icon {
+        background: #18a957;
+      }
+
+      .config-state.failure .state-icon {
+        background: #d93f3f;
+      }
+
+      .config-state.loading .state-icon {
+        background: transparent;
+        border: 2px solid #0b63d8;
+        border-top-color: transparent;
+        animation: spin 0.9s linear infinite;
+      }
+
+      .state-text {
+        font-size: 13px;
+        font-weight: 600;
+        color: #1f2a36;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <div class="card">
-        <h1>论文流程助手</h1>
+        <div id="captureView">
+          <h1>论文流程助手</h1>
 
-        <label for="pdfFile">PDF 文件</label>
-        <input id="pdfFile" type="file" accept=".pdf,application/pdf" />
+          <label for="pdfFile">PDF 文件</label>
+          <input id="pdfFile" type="file" accept=".pdf,application/pdf" />
 
-        <label for="outputName">输出文件名（.md）</label>
-        <input id="outputName" type="text" placeholder="可选，例如 note.md" />
+          <label for="outputName">输出文件名（.md）</label>
+          <input id="outputName" type="text" placeholder="可选，例如 note.md" />
 
-        <button id="startBtn" type="button">开始本地生成</button>
+          <button id="startBtn" type="button">开始生成</button>
+          <button id="apiSettingsBtn" class="secondary-btn" type="button">API配置</button>
 
-        <div class="status-box">
-          <div id="statusLine" class="status-line">空闲</div>
-          <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
-          <div id="metaLine" class="meta"></div>
+          <div class="status-box">
+            <div id="statusLine" class="status-line">空闲</div>
+            <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+            <div id="metaLine" class="meta"></div>
+          </div>
+        </div>
+
+        <div id="settingsView" class="hidden">
+          <h1>API配置</h1>
+
+          <label for="apiBaseUrl">地址</label>
+          <input id="apiBaseUrl" type="text" placeholder="例如 https://api.openai.com" />
+
+          <label for="apiKey">API 密钥</label>
+          <input id="apiKey" type="text" placeholder="例如 sk-..." />
+
+          <label for="modelName">模型名字</label>
+          <input id="modelName" type="text" placeholder="例如 gpt-5.3-codex" />
+
+          <button id="saveApiBtn" type="button">确认保存</button>
+          <button id="backBtn" class="secondary-btn" type="button">返回</button>
+
+          <div class="config-state" id="configState">
+            <span class="state-icon" id="stateIcon"></span>
+            <span class="state-text" id="stateText">请先保存并测试连接</span>
+          </div>
         </div>
       </div>
     </div>
