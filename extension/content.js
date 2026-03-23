@@ -141,10 +141,10 @@ function ensurePanelStyle() {
       max-width: calc(100vw - 20px);
       height: 640px;
       max-height: calc(100vh - 20px);
-      background: #fff;
-      border: 1px solid #d1d9e2;
-      border-radius: 10px;
-      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.26);
+      background: linear-gradient(180deg, #eef3f7 0%, #e7edf3 100%);
+      border: 1px solid #cfd8e2;
+      border-radius: 22px;
+      box-shadow: 0 18px 34px rgba(24, 45, 64, 0.18);
       z-index: 2147483646;
       display: none;
       overflow: hidden;
@@ -152,12 +152,13 @@ function ensurePanelStyle() {
     }
 
     #${PANEL_ROOT_ID} .ppf-header {
-      height: 36px;
+      height: 40px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 10px;
-      background: #0b63d8;
+      padding: 0 12px;
+      background: linear-gradient(180deg, #1b557f 0%, #174c7a 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
       color: #fff;
       font: 600 13px/1 "Segoe UI", Tahoma, sans-serif;
       user-select: none;
@@ -178,20 +179,27 @@ function ensurePanelStyle() {
       font-size: 18px;
       line-height: 1;
       cursor: pointer;
-      padding: 0 2px;
+      padding: 0 4px;
+      border-radius: 8px;
+    }
+
+    #${PANEL_ROOT_ID} .ppf-close:hover {
+      background: rgba(255, 255, 255, 0.14);
     }
 
     #${PANEL_ROOT_ID} .ppf-body {
       flex: 1;
       min-height: 0;
-      background: #fff;
+      padding: 8px;
+      background: linear-gradient(180deg, #eef3f7 0%, #e6edf3 100%);
     }
 
     #${PANEL_ROOT_ID} .ppf-frame {
       width: 100%;
       height: 100%;
       border: 0;
-      background: #fff;
+      border-radius: 16px;
+      background: transparent;
       display: block;
     }
   `;
@@ -225,7 +233,7 @@ function ensurePanel() {
 
   const title = document.createElement("div");
   title.className = "ppf-title";
-  title.textContent = "论文流程助手（常驻）";
+  title.textContent = "论文流程助手";
 
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";

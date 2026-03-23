@@ -3,17 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>论文流程助手（本地模式）</title>
+    <title>论文流程助手</title>
     <style>
       :root {
-        --bg: #f7f8fb;
+        --bg: #eef3f7;
         --card: #ffffff;
-        --line: #d7dce5;
-        --text: #1c2430;
-        --muted: #5f6977;
-        --primary: #0b63d8;
-        --danger: #c62828;
-        --success: #2e7d32;
+        --card-tint: #f7fafc;
+        --line: #d5dde7;
+        --line-strong: #b9c8d8;
+        --text: #182531;
+        --muted: #607181;
+        --muted-soft: #7f8d99;
+        --primary: #174c7a;
+        --primary-strong: #123c61;
+        --primary-soft: #e5eef7;
+        --danger: #c63838;
+        --success: #2d7b53;
+        --shadow: 0 18px 36px rgba(24, 45, 64, 0.12);
       }
 
       * {
@@ -24,83 +30,159 @@
         margin: 0;
         width: 380px;
         font-family: "Segoe UI", Tahoma, sans-serif;
-        background: var(--bg);
+        background: radial-gradient(circle at top left, #f9fcff 0, #eef3f7 42%, #e5edf4 100%);
         color: var(--text);
       }
 
       .wrap {
-        padding: 12px;
+        padding: 14px;
       }
 
       .card {
         border: 1px solid var(--line);
-        border-radius: 10px;
-        background: var(--card);
-        padding: 10px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--card) 0%, #fbfdff 100%);
+        box-shadow: var(--shadow);
+        padding: 16px;
       }
 
       .hidden {
         display: none;
       }
 
+      .title-block {
+        margin-bottom: 18px;
+      }
+
       h1 {
-        margin: 0 0 8px;
-        font-size: 16px;
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.15;
+        letter-spacing: 0.01em;
+      }
+
+      .section-block + .section-block {
+        margin-top: 18px;
+      }
+
+      .section-divider {
+        height: 1px;
+        margin: 18px 0 0;
+        background: linear-gradient(90deg, transparent 0%, var(--line) 12%, var(--line) 88%, transparent 100%);
       }
 
       label {
         display: block;
-        font-size: 12px;
-        margin-top: 8px;
+        margin-bottom: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
       }
 
       input[type="text"],
       input[type="file"] {
         width: 100%;
-        margin-top: 4px;
+        margin: 0;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font-size: 12px;
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 13px;
+        background: linear-gradient(180deg, #fdfefe 0%, #f6f9fb 100%);
+        color: var(--text);
+        transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+      }
+
+      input[type="text"]:focus,
+      input[type="file"]:focus {
+        outline: none;
+        border-color: var(--line-strong);
+        box-shadow: 0 0 0 3px rgba(23, 76, 122, 0.12);
         background: #fff;
+      }
+
+      input[type="file"] {
+        padding: 10px 12px;
+      }
+
+      input[type="file"]::file-selector-button {
+        margin-right: 12px;
+        border: 0;
+        border-radius: 10px;
+        padding: 9px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--primary-strong);
+        background: var(--primary-soft);
+        cursor: pointer;
       }
 
       button {
         width: 100%;
-        margin-top: 10px;
+        margin: 0;
         border: 0;
-        border-radius: 8px;
-        padding: 10px 12px;
+        border-radius: 12px;
+        padding: 12px 14px;
         font-weight: 600;
         font-size: 13px;
         color: #fff;
         background: var(--primary);
         cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+
+      button:hover:not([disabled]) {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 18px rgba(23, 76, 122, 0.18);
+      }
+
+      button:active:not([disabled]) {
+        transform: translateY(0);
       }
 
       button[disabled] {
-        opacity: 0.65;
+        opacity: 0.58;
         cursor: not-allowed;
+        box-shadow: none;
       }
 
       .secondary-btn {
-        background: #eef3fb;
-        color: #234266;
+        border: 1px solid var(--line);
+        color: var(--primary-strong);
+        background: #f4f7fb;
+      }
+
+      .primary-btn {
+        background: linear-gradient(180deg, var(--primary) 0%, var(--primary-strong) 100%);
+      }
+
+      .button-stack {
+        display: grid;
+        gap: 10px;
       }
 
       .status-box {
-        margin-top: 10px;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 8px;
-        min-height: 76px;
-        background: #fbfcff;
+        border-radius: 14px;
+        padding: 12px;
+        background: linear-gradient(180deg, var(--card-tint) 0%, #f3f7fa 100%);
+      }
+
+      .status-title {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
       }
 
       .status-line {
-        font-size: 12px;
-        color: var(--muted);
-        min-height: 18px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+        min-height: 20px;
       }
 
       .status-line.error {
@@ -114,35 +196,36 @@
       .progress {
         margin-top: 8px;
         width: 100%;
-        height: 8px;
+        height: 10px;
         border-radius: 999px;
-        background: #e8edf5;
+        background: #dfe7ef;
         overflow: hidden;
       }
 
       .progress-bar {
         width: 0%;
         height: 100%;
-        background: var(--primary);
-        transition: width 120ms linear;
+        background: linear-gradient(90deg, var(--primary) 0%, #2d689b 100%);
+        transition: width 160ms ease;
       }
 
       .meta {
         margin-top: 8px;
         font-size: 11px;
-        color: var(--muted);
+        line-height: 1.45;
+        color: var(--muted-soft);
         min-height: 16px;
       }
 
       .config-state {
-        margin-top: 10px;
-        border-radius: 10px;
-        padding: 10px;
+        margin-top: 0;
+        border-radius: 14px;
+        padding: 12px;
         display: flex;
         align-items: center;
         gap: 10px;
         border: 1px solid var(--line);
-        background: #fbfcff;
+        background: linear-gradient(180deg, #fbfdff 0%, #f3f7fa 100%);
       }
 
       .config-state.success {
@@ -195,6 +278,13 @@
         color: #1f2a36;
       }
 
+      .page-subtle {
+        margin: 0 0 14px;
+        font-size: 12px;
+        line-height: 1.45;
+        color: var(--muted-soft);
+      }
+
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -206,18 +296,29 @@
     <div class="wrap">
       <div class="card">
         <div id="captureView">
-          <h1>论文流程助手</h1>
+          <div class="title-block">
+            <h1>论文流程助手</h1>
+          </div>
 
-          <label for="pdfFile">PDF 文件</label>
-          <input id="pdfFile" type="file" accept=".pdf,application/pdf" />
+          <div class="section-block">
+            <label for="pdfFile">PDF 文件</label>
+            <input id="pdfFile" type="file" accept=".pdf,application/pdf" />
+          </div>
 
-          <label for="outputName">输出文件名（.md）</label>
-          <input id="outputName" type="text" placeholder="可选，例如 note.md" />
+          <div class="section-block">
+            <label for="outputName">输出文件名</label>
+            <input id="outputName" type="text" placeholder="例如 note.md" />
+          </div>
 
-          <button id="startBtn" type="button">开始生成</button>
-          <button id="apiSettingsBtn" class="secondary-btn" type="button">API配置</button>
+          <div class="section-block button-stack">
+            <button id="startBtn" class="primary-btn" type="button">开始生成</button>
+            <button id="apiSettingsBtn" class="secondary-btn" type="button">API配置</button>
+          </div>
 
-          <div class="status-box">
+          <div class="section-divider"></div>
+
+          <div class="section-block status-box">
+            <p class="status-title">当前状态</p>
             <div id="statusLine" class="status-line">空闲</div>
             <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
             <div id="metaLine" class="meta"></div>
@@ -225,21 +326,35 @@
         </div>
 
         <div id="settingsView" class="hidden">
-          <h1>API配置</h1>
+          <div class="title-block">
+            <h1>API配置</h1>
+          </div>
 
-          <label for="apiBaseUrl">地址</label>
-          <input id="apiBaseUrl" type="text" placeholder="例如 https://api.openai.com" />
+          <p class="page-subtle">填写模型接口信息后，点击确认保存。系统会先测试接口连通性，再保存配置。</p>
 
-          <label for="apiKey">API 密钥</label>
-          <input id="apiKey" type="text" placeholder="例如 sk-..." />
+          <div class="section-block">
+            <label for="apiBaseUrl">地址</label>
+            <input id="apiBaseUrl" type="text" placeholder="例如 https://api.openai.com" />
+          </div>
 
-          <label for="modelName">模型名字</label>
-          <input id="modelName" type="text" placeholder="例如 gpt-5.3-codex" />
+          <div class="section-block">
+            <label for="apiKey">API 密钥</label>
+            <input id="apiKey" type="text" placeholder="例如 sk-..." />
+          </div>
 
-          <button id="saveApiBtn" type="button">确认保存</button>
-          <button id="backBtn" class="secondary-btn" type="button">返回</button>
+          <div class="section-block">
+            <label for="modelName">模型名字</label>
+            <input id="modelName" type="text" placeholder="例如 gpt-5.3-codex" />
+          </div>
 
-          <div class="config-state" id="configState">
+          <div class="section-block button-stack">
+            <button id="saveApiBtn" class="primary-btn" type="button">确认保存</button>
+            <button id="backBtn" class="secondary-btn" type="button">返回</button>
+          </div>
+
+          <div class="section-divider"></div>
+
+          <div class="section-block config-state" id="configState">
             <span class="state-icon" id="stateIcon"></span>
             <span class="state-text" id="stateText">请先保存并测试连接</span>
           </div>
