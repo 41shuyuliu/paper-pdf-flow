@@ -2,18 +2,23 @@ import { GlobalWorkerOptions, getDocument } from "./vendor/pdf.min.mjs";
 
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
 
-const STORAGE_KEY = "paper_pdf_flow_extension_local_settings";
-
 const refs = {
   pdfFile: document.getElementById("pdfFile"),
   outputName: document.getElementById("outputName"),
-  langSelect: document.getElementById("langSelect"),
-  modeSelect: document.getElementById("modeSelect"),
   startBtn: document.getElementById("startBtn"),
   statusLine: document.getElementById("statusLine"),
   progressBar: document.getElementById("progressBar"),
   metaLine: document.getElementById("metaLine"),
 };
+
+function shouldResetOnOpen() {
+  try {
+    const params = new URLSearchParams(String(window.location.search || ""));
+    return params.get("reset") === "1";
+  } catch (_error) {
+    return false;
+  }
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -51,8 +56,6 @@ function setRunning(running) {
   refs.startBtn.disabled = disabled;
   refs.pdfFile.disabled = disabled;
   refs.outputName.disabled = disabled;
-  refs.langSelect.disabled = disabled;
-  refs.modeSelect.disabled = disabled;
 }
 
 function ensurePdfFile(file) {
@@ -510,30 +513,11 @@ async function readPdfText(file) {
   return { fullText, pages: pdf.numPages, firstPageRaw, fullTextRaw };
 }
 
-function buildMarkdown({ pdfName, lang, mode, fullText, pages, firstPageRaw, fullTextRaw }) {
+function buildMarkdown({ pdfName, fullText, pages, firstPageRaw, fullTextRaw }) {
   const title = extractTitle(fullText, firstPageRaw);
   const doi = extractDoi(fullText, firstPageRaw);
   const figs = extractFigCaptions(fullTextRaw);
-  const signals = extractSignals(fullText);
-
-  if (lang === "zh") {
-    if (mode === "final") {
-      return zhFinalTemplate({ title, doi, pdfName, fullText, figs });
-    }
-    return zhDraftTemplate({ title, doi, pages, figs, signals });
-  }
-  return enTemplate({ title, doi, pages, figs, signals, mode });
-}
-
-async function loadSettings() {
-  const data = await chrome.storage.local.get([STORAGE_KEY]);
-  const saved = data[STORAGE_KEY] || {};
-  refs.langSelect.value = safeText(saved.lang) || "zh";
-  refs.modeSelect.value = safeText(saved.mode) || "final";
-}
-
-async function saveSettings(lang, mode) {
-  await chrome.storage.local.set({ [STORAGE_KEY]: { lang, mode } });
+  return zhFinalTemplate({ title, doi, pdfName, fullText, figs });
 }
 
 async function handleStart() {
@@ -545,11 +529,8 @@ async function handleStart() {
 
     const file = refs.pdfFile.files && refs.pdfFile.files[0] ? refs.pdfFile.files[0] : null;
     ensurePdfFile(file);
-    const lang = safeText(refs.langSelect.value) || "zh";
-    const mode = safeText(refs.modeSelect.value) || "final";
     const outputName = validateOutputName(refs.outputName.value) || defaultOutputName(file.name);
 
-    await saveSettings(lang, mode);
     setProgress(0.1);
     setStatus("正在读取 PDF...");
     setMeta(`文件=${file.name}`);
@@ -558,13 +539,11 @@ async function handleStart() {
     const parsed = await readPdfText(file);
     setProgress(0.6);
     setStatus("正在生成 Markdown...");
-    setMeta(`页数=${parsed.pages} | 语言=${lang} | 模式=${mode}`);
+    setMeta(`页数=${parsed.pages} | 语言=中文 | 模式=最终版`);
     await sleep(30);
 
     const md = buildMarkdown({
       pdfName: file.name,
-      lang,
-      mode,
       fullText: parsed.fullText,
       pages: parsed.pages,
       firstPageRaw: parsed.firstPageRaw,
@@ -588,9 +567,12 @@ async function handleStart() {
 
 async function bootstrap() {
   try {
-    await loadSettings();
+    if (shouldResetOnOpen()) {
+      refs.pdfFile.value = "";
+      refs.outputName.value = "";
+    }
     setStatus("空闲");
-    setMeta("就绪（本地模式）");
+    setMeta(shouldResetOnOpen() ? "已重置，等待新任务" : "就绪（本地模式）");
     setProgress(0);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error || "初始化失败");

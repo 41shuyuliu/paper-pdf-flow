@@ -44,12 +44,6 @@
         font-size: 16px;
       }
 
-      .hint {
-        margin: 0 0 10px;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
       label {
         display: block;
         font-size: 12px;
@@ -57,8 +51,7 @@
       }
 
       input[type="text"],
-      input[type="file"],
-      select {
+      input[type="file"] {
         width: 100%;
         margin-top: 4px;
         border: 1px solid var(--line);
@@ -66,12 +59,6 @@
         padding: 8px 10px;
         font-size: 12px;
         background: #fff;
-      }
-
-      .row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
       }
 
       button {
@@ -143,30 +130,12 @@
     <div class="wrap">
       <div class="card">
         <h1>论文流程助手</h1>
-        <p class="hint">无需后端服务。插件本地解析 PDF 并直接下载 Markdown。</p>
 
         <label for="pdfFile">PDF 文件</label>
         <input id="pdfFile" type="file" accept=".pdf,application/pdf" />
 
         <label for="outputName">输出文件名（.md）</label>
         <input id="outputName" type="text" placeholder="可选，例如 note.md" />
-
-        <div class="row">
-          <div>
-            <label for="langSelect">语言</label>
-            <select id="langSelect">
-              <option value="zh" selected>中文</option>
-              <option value="en">英文</option>
-            </select>
-          </div>
-          <div>
-            <label for="modeSelect">模式</label>
-            <select id="modeSelect">
-              <option value="final" selected>最终版</option>
-              <option value="draft">草稿版</option>
-            </select>
-          </div>
-        </div>
 
         <button id="startBtn" type="button">开始本地生成</button>
 
