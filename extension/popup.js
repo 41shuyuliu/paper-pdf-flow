@@ -242,14 +242,79 @@ async function saveApiSettings() {
   }
 }
 
+function takeExcerptWindow(fullText, start, maxChars) {
+  const text = safeText(fullText);
+  if (!text) {
+    return "";
+  }
+  const safeStart = Math.max(0, Math.min(text.length, Number(start) || 0));
+  const safeLength = Math.max(0, Number(maxChars) || 0);
+  return text.slice(safeStart, safeStart + safeLength);
+}
+
+function extractSectionExcerpt(fullText, patterns, options = {}) {
+  const text = safeText(fullText);
+  if (!text) {
+    return "";
+  }
+
+  const maxChars = Math.max(0, Number(options.maxChars) || 0) || 8000;
+  const leadChars = Math.max(0, Number(options.leadChars) || 0);
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && Number.isFinite(match.index)) {
+      const start = Math.max(0, match.index - leadChars);
+      return text.slice(start, start + maxChars);
+    }
+  }
+
+  return "";
+}
+
+function extractMiddleExcerpt(fullText, maxChars = 6000) {
+  const text = safeText(fullText);
+  if (!text) {
+    return "";
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const start = Math.max(0, Math.floor((text.length - maxChars) / 2));
+  return text.slice(start, start + maxChars);
+}
+
 function buildModelPrompts({ pdfName, parsed, localDraft }) {
   const title = extractTitle(parsed.fullText, parsed.firstPageRaw);
   const doi = extractDoi(parsed.fullText, parsed.firstPageRaw);
   const journal = zhExtractJournalLine(parsed.fullText);
   const figs = extractFigCaptions(parsed.fullTextRaw);
   const signals = extractSignals(parsed.fullText);
-  const excerptHead = safeText(parsed.fullText).slice(0, 18000);
-  const excerptTail = parsed.fullText.length > 22000 ? safeText(parsed.fullText).slice(-4000) : "";
+  const introExcerpt = takeExcerptWindow(parsed.fullText, 0, 9000);
+  const methodExcerpt = extractSectionExcerpt(
+    parsed.fullText,
+    [
+      /\bmaterials?\s+and\s+methods?\b/i,
+      /\bmethods?\b/i,
+      /\bmethodology\b/i,
+      /\bexperimental\s+setup\b/i,
+      /\bimplementation\s+details?\b/i,
+      /\bexperiments?\b/i,
+    ],
+    { maxChars: 11000, leadChars: 500 }
+  );
+  const resultsExcerpt = extractSectionExcerpt(
+    parsed.fullText,
+    [
+      /\bresults?\s+and\s+discussion\b/i,
+      /\bresults?\b/i,
+      /\bdiscussion\b/i,
+      /\bconclusions?\b/i,
+    ],
+    { maxChars: 8000, leadChars: 500 }
+  );
+  const middleExcerpt = extractMiddleExcerpt(parsed.fullText, 5000);
+  const tailExcerpt = parsed.fullText.length > 18000 ? safeText(parsed.fullText).slice(-2500) : "";
   const payload = {
     file_name: pdfName,
     pages: parsed.pages,
@@ -258,32 +323,47 @@ function buildModelPrompts({ pdfName, parsed, localDraft }) {
     doi_guess: doi,
     figures: figs.map(([no, caption]) => ({ figure: `Fig.${no}`, caption })),
     signals,
-    body_excerpt_head: excerptHead,
-    body_excerpt_tail: excerptTail,
+    body_excerpt_intro: introExcerpt,
+    body_excerpt_method: methodExcerpt,
+    body_excerpt_middle: middleExcerpt,
+    body_excerpt_results: resultsExcerpt,
+    body_excerpt_tail: tailExcerpt,
     heuristic_draft: localDraft,
   };
 
   const systemPrompt = [
-    "你是论文 PDF 结构化整理助手。",
-    "你的任务是基于本地解析得到的论文文本、图注和启发式草稿，输出一份高质量中文 Markdown 笔记。",
+    "你是资深首席研究员，正在白板前为没有专业背景的学生解读论文。",
+    "你的任务不是写摘要，而是基于本地解析得到的论文文本、正文摘录、图注和启发式草稿，输出一份高质量中文 Markdown 解读稿。",
     "只输出 Markdown，不要解释，不要 JSON，不要代码块。",
+    "允许为了帮助理解补充解释，但不能编造原文未提供的事实、实验步骤、数据或结论。",
+    "如果材料里没有明确给出某个细节，请明确写“原文摘录中未明确给出（建议回看原文）”。",
+    "优先依据正文摘录解释论文逻辑，再结合图注补强结果证据链。",
+    "Method 部分必须是全文最详细的部分，要逐步、逐点解释研究对象、输入输出、关键模块、执行顺序、训练或实验设置、评价方式，以及各步骤之间的关系。",
     "必须严格使用以下固定结构和标题：",
-    "# <pdf_stem> 极简梳理",
+    "# <pdf_stem> 论文解读",
     "## 文献信息",
     "## 这篇论文要解决什么问题",
-    "## 按图看整篇流程（Fig.1~Fig.N）",
-    "## 关键结论（一句话）",
-    "如果信息不确定，请明确写“未自动识别（建议手动补充）”。",
-    "尽量利用图注恢复论文流程，不要编造正文中不存在的实验细节。",
+    "## 按原文结构解读全文",
+    "## Method 详细解读",
+    "## 实验设计、数据与评价指标",
+    "## 结果如何支撑结论",
+    "## 局限性与启发",
+    "## 一句话总结",
   ].join("\n");
 
   const userPrompt = [
-    "请根据下面的 PDF 本地解析结果，生成最终中文 Markdown。",
+    "请根据下面的 PDF 本地解析结果，生成最终中文 Markdown 解读。",
     "输出要求：",
     "1. 只输出 Markdown 正文。",
-    "2. 文风简洁、准确、偏科研笔记。",
-    "3. “按图看整篇流程”部分优先逐图总结，若图注不足可结合正文摘录补足。",
-    "4. “关键结论（一句话）”必须只有一个列表项。",
+    "2. 用中文作答，风格像导师在白板前带学生读论文：简洁、清楚、便于非专业读者理解。",
+    "3. 不是写详细摘要，而是按论文原始逻辑带用户读懂全文。",
+    "4. “按原文结构解读全文”要按论文从问题定义到方法、结果、结论的顺序解释。",
+    "5. “Method 详细解读”必须是全篇最详细的部分，可使用编号或分点，把实验或算法执行流程讲完整。",
+    "6. “实验设计、数据与评价指标”要尽可能交代数据来源、分组、对照、时间点、剂量、评价指标和比较方式；若材料不足要明确说明。",
+    "7. “结果如何支撑结论”要说明关键证据来自哪些实验、图或观察。",
+    "8. 如图注与正文摘录侧重点不同，优先忠实正文，再用图注补充。",
+    "9. 如果信息不确定，请明确写“未自动识别（建议手动补充）”或“原文摘录中未明确给出（建议回看原文）”。",
+    "10. 不要照抄 payload，要把信息组织成自然、可读、结构稳定的解读稿。",
     "",
     JSON.stringify(payload, null, 2),
   ].join("\n");
@@ -305,7 +385,7 @@ async function requestMarkdownFromModel(config, prompts) {
       body: JSON.stringify({
         model: config.model,
         store: false,
-        max_output_tokens: 3200,
+        max_output_tokens: 5200,
         input: [
           { role: "system", content: [{ type: "input_text", text: prompts.systemPrompt }] },
           { role: "user", content: [{ type: "input_text", text: prompts.userPrompt }] },
@@ -840,7 +920,7 @@ async function handleStart() {
     }
 
     setProgress(0.42);
-    setStatus("正在整理论文内容...");
+    setStatus("正在整理论文结构与方法...");
     setMeta(`页数=${parsed.pages} | 模型=${apiConfig.model}`);
     await sleep(30);
 
@@ -853,7 +933,7 @@ async function handleStart() {
     });
 
     setProgress(0.68);
-    setStatus("正在调用模型生成...");
+    setStatus("正在调用模型生成论文解读...");
     await sleep(30);
 
     const md = await requestMarkdownFromModel(
@@ -866,8 +946,8 @@ async function handleStart() {
     await sleep(30);
     triggerDownload(md, outputName);
     setProgress(1.0);
-    setStatus("完成，Markdown 已下载。", "success");
-    setMeta(`输出=${outputName} | 生成方式=API`);
+    setStatus("完成，论文解读 Markdown 已下载。", "success");
+    setMeta(`输出=${outputName} | 模式=论文解读`);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error || "未知错误");
     setStatus(msg, "error");
@@ -884,7 +964,7 @@ async function bootstrap() {
     }
     showCaptureView();
     setStatus("空闲");
-    setMeta(shouldResetOnOpen() ? "已重置，等待新任务" : "就绪（API 生成模式）");
+    setMeta(shouldResetOnOpen() ? "已重置，等待新任务" : "就绪（论文解读模式）");
     setProgress(0);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error || "初始化失败");
