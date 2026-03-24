@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "论文流程助手",
+  "name": "论文解读助手",
   "version": "0.1.0",
-  "description": "本地解析单篇论文 PDF 并下载 Markdown 流程笔记。",
+  "description": "本地解析单篇论文 PDF 并下载 Markdown 论文解读稿。",
   "permissions": [
     "storage",
     "activeTab",
@@ -40,6 +40,6 @@
     }
   ],
   "action": {
-    "default_title": "论文流程助手"
+    "default_title": "论文解读助手"
   }
 }

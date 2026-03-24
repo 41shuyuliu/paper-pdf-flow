@@ -233,7 +233,7 @@ function ensurePanel() {
 
   const title = document.createElement("div");
   title.className = "ppf-title";
-  title.textContent = "论文流程助手";
+  title.textContent = "论文解读助手";
 
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
@@ -247,7 +247,7 @@ function ensurePanel() {
   const frame = document.createElement("iframe");
   frame.className = "ppf-frame";
   frame.src = buildPopupSrc(false);
-  frame.setAttribute("title", "论文流程助手");
+  frame.setAttribute("title", "论文解读助手");
   body.appendChild(frame);
 
   closeBtn.addEventListener("click", () => {
