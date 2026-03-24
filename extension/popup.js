@@ -4,11 +4,19 @@ GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs
 
 const API_SETTINGS_KEY = "paper_pdf_flow_api_settings";
 const API_VALIDATE_STATE_KEY = "paper_pdf_flow_api_validate_state";
+const MSG_EXTRACT_CURRENT_ARTICLE = "PPF_EXTRACT_CURRENT_ARTICLE";
+const SOURCE_PDF = "pdf";
+const SOURCE_WEB = "web";
 
 const refs = {
   captureView: document.getElementById("captureView"),
   settingsView: document.getElementById("settingsView"),
+  sourcePdfBtn: document.getElementById("sourcePdfBtn"),
+  sourceWebBtn: document.getElementById("sourceWebBtn"),
+  pdfSection: document.getElementById("pdfSection"),
+  webSection: document.getElementById("webSection"),
   pdfFile: document.getElementById("pdfFile"),
+  webUrl: document.getElementById("webUrl"),
   outputName: document.getElementById("outputName"),
   startBtn: document.getElementById("startBtn"),
   apiSettingsBtn: document.getElementById("apiSettingsBtn"),
@@ -24,6 +32,8 @@ const refs = {
   stateIcon: document.getElementById("stateIcon"),
   stateText: document.getElementById("stateText"),
 };
+
+let sourceType = SOURCE_PDF;
 
 function shouldResetOnOpen() {
   try {
@@ -66,6 +76,26 @@ function showCaptureView() {
 function showSettingsView() {
   showElement(refs.settingsView);
   hideElement(refs.captureView);
+}
+
+function setSourceType(nextSource) {
+  sourceType = nextSource === SOURCE_WEB ? SOURCE_WEB : SOURCE_PDF;
+
+  refs.sourcePdfBtn.classList.toggle("active", sourceType === SOURCE_PDF);
+  refs.sourceWebBtn.classList.toggle("active", sourceType === SOURCE_WEB);
+
+  if (sourceType === SOURCE_PDF) {
+    showElement(refs.pdfSection);
+    hideElement(refs.webSection);
+    refs.startBtn.textContent = "开始生成";
+    refs.outputName.placeholder = "例如 note.md";
+    return;
+  }
+
+  hideElement(refs.pdfSection);
+  showElement(refs.webSection);
+  refs.startBtn.textContent = "从当前页面生成";
+  refs.outputName.placeholder = "例如 current_page_interpretation.md";
 }
 
 function setConfigState(kind, text) {
@@ -285,10 +315,10 @@ function extractMiddleExcerpt(fullText, maxChars = 6000) {
 }
 
 function buildModelPrompts({ pdfName, parsed }) {
-  const title = extractTitle(parsed.fullText, parsed.firstPageRaw);
-  const doi = extractDoi(parsed.fullText, parsed.firstPageRaw);
-  const journal = zhExtractJournalLine(parsed.fullText);
-  const figs = extractFigCaptions(parsed.fullTextRaw);
+  const title = safeText(parsed.titleGuess) || extractTitle(parsed.fullText, parsed.firstPageRaw);
+  const doi = safeText(parsed.doiGuess) || extractDoi(parsed.fullText, parsed.firstPageRaw);
+  const journal = safeText(parsed.journalGuess) || zhExtractJournalLine(parsed.fullText);
+  const figs = Array.isArray(parsed.figures) && parsed.figures.length ? parsed.figures : extractFigCaptions(parsed.fullTextRaw);
   const signals = extractSignals(parsed.fullText);
   const introExcerpt = takeExcerptWindow(parsed.fullText, 0, 9000);
   const methodExcerpt = extractSectionExcerpt(
@@ -429,7 +459,10 @@ function setProgress(value) {
 function setRunning(running) {
   const disabled = Boolean(running);
   refs.startBtn.disabled = disabled;
+  refs.sourcePdfBtn.disabled = disabled;
+  refs.sourceWebBtn.disabled = disabled;
   refs.pdfFile.disabled = disabled;
+  refs.webUrl.disabled = disabled;
   refs.outputName.disabled = disabled;
   refs.apiSettingsBtn.disabled = disabled;
 }
@@ -462,6 +495,43 @@ function validateOutputName(value) {
 function defaultOutputName(pdfName) {
   const stem = safeText(pdfName).replace(/\.pdf$/i, "") || "论文解读";
   return `${stem}.md`;
+}
+
+function defaultWebOutputName(title) {
+  const stem = safeText(title)
+    .replace(/[<>:"/\\|?*]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return `${stem || "current_page_interpretation"}.md`;
+}
+
+function isRestrictedTabUrl(url) {
+  const value = safeText(url).toLowerCase();
+  return !value || value.startsWith("chrome://") || value.startsWith("chrome-extension://") || value.startsWith("edge://") || value.startsWith("about:");
+}
+
+async function requestCurrentPageArticle() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = Array.isArray(tabs) && tabs.length ? tabs[0] : null;
+  if (!activeTab || !activeTab.id) {
+    throw new Error("未找到当前标签页，请先打开论文网页。");
+  }
+  if (isRestrictedTabUrl(activeTab.url)) {
+    throw new Error("当前页面不支持读取，请切换到论文网页后再试。");
+  }
+
+  let response;
+  try {
+    response = await chrome.tabs.sendMessage(activeTab.id, { type: MSG_EXTRACT_CURRENT_ARTICLE });
+  } catch (_error) {
+    throw new Error("当前页面尚未准备好网页抽取，请刷新论文页面后重试。");
+  }
+
+  if (!response || response.ok !== true) {
+    throw new Error(response && response.error ? response.error : "网页正文抽取失败");
+  }
+  return response;
 }
 
 function triggerDownload(content, filename) {
@@ -686,7 +756,59 @@ async function readPdfText(file) {
   return { fullText, pages: pdf.numPages, firstPageRaw, fullTextRaw };
 }
 
+async function handleWebStart() {
+  try {
+    setRunning(true);
+    setProgress(0);
+    setMeta("");
+    const url = safeText(refs.webUrl.value);
+    if (url) {
+      throw new Error("当前版本先支持“从当前页面生成”，URL 输入将在下一步接入。");
+    }
+
+    setStatus("正在读取当前页面...");
+    const apiConfig = await getValidatedApiSettings();
+    const article = await requestCurrentPageArticle();
+    const parsed = article.parsed || {};
+    if (safeText(parsed.fullText).length < 120) {
+      throw new Error("当前页面正文提取过少，请确认已打开论文正文页面。");
+    }
+    const outputName = validateOutputName(refs.outputName.value) || defaultWebOutputName(article.title || parsed.titleGuess || "current_page_interpretation");
+
+    setProgress(0.18);
+    await sleep(30);
+    setStatus("正在整理论文结构与方法...");
+    setMeta(`页面=${article.title || "当前页面"} | 模型=${apiConfig.model}`);
+
+    setProgress(0.45);
+    await sleep(30);
+    setStatus("正在调用模型生成论文解读...");
+    const md = await requestMarkdownFromModel(
+      apiConfig,
+      buildModelPrompts({ pdfName: article.title || "current_page", parsed })
+    );
+
+    setProgress(0.88);
+    await sleep(30);
+    setStatus("正在准备下载...");
+    triggerDownload(md, outputName);
+    setProgress(1.0);
+    setStatus("完成，当前页面论文解读 Markdown 已下载。", "success");
+    setMeta(`输出=${outputName} | 来源=当前页面`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error || "未知错误");
+    setStatus(msg, "error");
+  } finally {
+    setRunning(false);
+  }
+}
+
 async function handleStart() {
+  if (sourceType === SOURCE_WEB) {
+    await handleWebStart();
+    return;
+  }
+
   try {
     setRunning(true);
     setProgress(0);
@@ -741,9 +863,11 @@ async function bootstrap() {
   try {
     if (shouldResetOnOpen()) {
       refs.pdfFile.value = "";
+      refs.webUrl.value = "";
       refs.outputName.value = "";
     }
     showCaptureView();
+    setSourceType(SOURCE_PDF);
     setStatus("空闲");
     setMeta(shouldResetOnOpen() ? "已重置，等待新任务" : "就绪（论文解读模式）");
     setProgress(0);
@@ -752,6 +876,18 @@ async function bootstrap() {
     setStatus(msg, "error");
   }
   refs.startBtn.addEventListener("click", handleStart);
+  refs.sourcePdfBtn.addEventListener("click", () => {
+    setSourceType(SOURCE_PDF);
+    setStatus("空闲");
+    setMeta("就绪（PDF 模式）");
+    setProgress(0);
+  });
+  refs.sourceWebBtn.addEventListener("click", () => {
+    setSourceType(SOURCE_WEB);
+    setStatus("空闲");
+    setMeta("就绪（网页提取模式，第一版支持当前页面）");
+    setProgress(0);
+  });
   refs.apiSettingsBtn.addEventListener("click", async () => {
     await loadApiSettings();
     showSettingsView();

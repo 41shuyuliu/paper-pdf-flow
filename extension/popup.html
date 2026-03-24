@@ -162,6 +162,46 @@
         gap: 10px;
       }
 
+      .source-switch {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .source-btn {
+        border: 1px solid var(--line);
+        color: var(--primary-strong);
+        background: #f4f7fb;
+      }
+
+      .source-btn.active {
+        color: #fff;
+        border-color: transparent;
+        background: linear-gradient(180deg, var(--primary) 0%, var(--primary-strong) 100%);
+        box-shadow: 0 10px 18px rgba(23, 76, 122, 0.18);
+      }
+
+      .source-note {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--muted-soft);
+      }
+
+      .mode-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--primary-strong);
+        background: var(--primary-soft);
+      }
+
       .status-box {
         border: 1px solid var(--line);
         border-radius: 14px;
@@ -301,8 +341,24 @@
           </div>
 
           <div class="section-block">
+            <label>输入来源</label>
+            <div class="source-switch">
+              <button id="sourcePdfBtn" class="source-btn active" type="button">PDF上传</button>
+              <button id="sourceWebBtn" class="source-btn" type="button">网页提取</button>
+            </div>
+          </div>
+
+          <div id="pdfSection" class="section-block">
             <label for="pdfFile">PDF 文件</label>
             <input id="pdfFile" type="file" accept=".pdf,application/pdf" />
+          </div>
+
+          <div id="webSection" class="section-block hidden">
+            <label for="webUrl">当前页面</label>
+            <input id="webUrl" class="hidden" type="text" placeholder="后续用于 URL 输入" />
+            <p class="source-note" style="margin-top: 10px">
+              第一版默认读取当前标签页中的网页文章，并生成论文解读稿。
+            </p>
           </div>
 
           <div class="section-block">

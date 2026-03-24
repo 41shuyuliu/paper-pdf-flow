@@ -3,6 +3,7 @@ const MSG_CLOSE_PANEL = "PPF_CLOSE_PANEL";
 const MSG_QUERY_PANEL_STATE = "PPF_QUERY_PANEL_STATE";
 const MSG_PANEL_CLOSED = "PPF_PANEL_CLOSED";
 const MSG_DEBUG_EVENT = "PPF_DEBUG_EVENT";
+const MSG_EXTRACT_CURRENT_ARTICLE = "PPF_EXTRACT_CURRENT_ARTICLE";
 
 const PANEL_ROOT_ID = "__ppf_panel_root__";
 const PANEL_STYLE_ID = "__ppf_panel_style__";
@@ -304,6 +305,166 @@ function queryPanelState() {
   return state;
 }
 
+function normalizeText(text) {
+  return String(text || "").replace(/\u0000/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function safeText(value) {
+  return String(value || "").trim();
+}
+
+function readMetaContent(selectors) {
+  for (const selector of selectors) {
+    const node = document.querySelector(selector);
+    if (!node) {
+      continue;
+    }
+    const content = safeText(node.getAttribute("content") || node.textContent || "");
+    if (content) {
+      return content;
+    }
+  }
+  return "";
+}
+
+function pickArticleRoot() {
+  const selectors = [
+    "article",
+    "main article",
+    "main",
+    "[role='main']",
+    ".article",
+    ".article-content",
+    ".article-body",
+    ".main-content",
+    ".content",
+  ];
+
+  for (const selector of selectors) {
+    const node = document.querySelector(selector);
+    if (node && safeText(node.innerText).length >= 800) {
+      return node;
+    }
+  }
+  return document.body;
+}
+
+function collectHeadingsAndParagraphs(root) {
+  const nodes = root.querySelectorAll("h1, h2, h3, h4, p, li");
+  const lines = [];
+  for (const node of nodes) {
+    const text = normalizeText(node.innerText || node.textContent || "");
+    if (!text) {
+      continue;
+    }
+    if (text.length < 2) {
+      continue;
+    }
+    lines.push(text);
+  }
+  return lines;
+}
+
+function collectFigureCaptions(root) {
+  const figures = [];
+  const figureNodes = root.querySelectorAll("figure");
+  let fallbackIndex = 1;
+
+  for (const figureNode of figureNodes) {
+    const captionNode = figureNode.querySelector("figcaption") || figureNode.querySelector("caption");
+    const caption = normalizeText(captionNode ? captionNode.innerText || captionNode.textContent || "" : "");
+    if (!caption || caption.length < 12) {
+      continue;
+    }
+
+    const labelMatch = caption.match(/(?:Fig(?:ure)?\.?|图)\s*(\d+)/i);
+    const label = labelMatch ? labelMatch[1] : String(fallbackIndex);
+    figures.push([label, caption]);
+    fallbackIndex += 1;
+    if (figures.length >= 12) {
+      break;
+    }
+  }
+
+  if (figures.length) {
+    return figures;
+  }
+
+  const captionNodes = root.querySelectorAll("figcaption, .figcaption, .figure-caption, .caption");
+  for (const node of captionNodes) {
+    const caption = normalizeText(node.innerText || node.textContent || "");
+    if (!caption || caption.length < 12) {
+      continue;
+    }
+    const labelMatch = caption.match(/(?:Fig(?:ure)?\.?|图)\s*(\d+)/i);
+    const label = labelMatch ? labelMatch[1] : String(fallbackIndex);
+    figures.push([label, caption]);
+    fallbackIndex += 1;
+    if (figures.length >= 12) {
+      break;
+    }
+  }
+  return figures;
+}
+
+function buildFirstPageRaw(title, abstractText, lines) {
+  return [title, abstractText, ...lines.slice(0, 40)].filter(Boolean).join("\n");
+}
+
+function extractCurrentArticlePayload() {
+  const root = pickArticleRoot();
+  const title =
+    readMetaContent([
+      'meta[property="og:title"]',
+      'meta[name="citation_title"]',
+      'meta[name="dc.title"]',
+    ]) || normalizeText(document.title || "") || "当前页面文章";
+
+  const doi = readMetaContent([
+    'meta[name="citation_doi"]',
+    'meta[name="dc.identifier"]',
+    'meta[property="og:doi"]',
+  ]);
+
+  const journal = readMetaContent([
+    'meta[name="citation_journal_title"]',
+    'meta[name="dc.source"]',
+    'meta[name="prism.publicationName"]',
+  ]);
+
+  const abstractText =
+    readMetaContent(['meta[name="description"]', 'meta[property="og:description"]']) ||
+    normalizeText((document.querySelector("abstract, .abstract, #abstract") || {}).innerText || "");
+
+  const lines = collectHeadingsAndParagraphs(root);
+  const figures = collectFigureCaptions(root);
+  const figureLines = figures.map(([label, caption]) => `Fig.${label}: ${caption}`);
+  const fullTextRaw = [...lines, ...figureLines].join("\n");
+  const fullText = normalizeText(lines.join(" "));
+  const firstPageRaw = buildFirstPageRaw(title, abstractText, lines);
+
+  return {
+    ok: true,
+    url: String(window.location.href || ""),
+    canonicalUrl:
+      readMetaContent(['link[rel="canonical"]']) ||
+      safeText((document.querySelector('link[rel="canonical"]') || {}).href || window.location.href || ""),
+    title,
+    doi,
+    journal,
+    parsed: {
+      fullText,
+      pages: 1,
+      firstPageRaw,
+      fullTextRaw,
+      figures,
+      titleGuess: title,
+      doiGuess: doi,
+      journalGuess: journal,
+    },
+  };
+}
+
 function installRuntimeOnce() {
   if (window.__ppfRuntimeInstalled) {
     debugLog("runtime_install_skip_already_installed");
@@ -353,6 +514,26 @@ function installRuntimeOnce() {
       const state = queryPanelState();
       sendResponse({ ok: true, open: state.open, hasPanel: state.hasPanel });
       debugLog("runtime_message_query_done", state);
+      return;
+    }
+
+    if (message.type === MSG_EXTRACT_CURRENT_ARTICLE) {
+      try {
+        const payload = extractCurrentArticlePayload();
+        sendResponse(payload);
+        debugLog("runtime_message_extract_article_done", {
+          title: payload.title,
+          url: payload.url,
+          textLength: safeText(payload.parsed && payload.parsed.fullText ? payload.parsed.fullText : "").length,
+          figures: Array.isArray(payload.parsed && payload.parsed.figures ? payload.parsed.figures : [])
+            ? payload.parsed.figures.length
+            : 0,
+        });
+      } catch (error) {
+        const detail = String(error && error.message ? error.message : error || "extract_failed");
+        debugLog("runtime_message_extract_article_failed", { error: detail });
+        sendResponse({ ok: false, error: detail });
+      }
       return;
     }
 
