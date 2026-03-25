@@ -329,28 +329,34 @@ function readMetaContent(selectors) {
 
 function pickArticleRoot() {
   const selectors = [
-    "article",
     "main article",
-    "main",
+    "article",
+    "[role='main'] article",
     "[role='main']",
-    ".article",
+    "main",
     ".article-content",
     ".article-body",
+    ".article",
     ".main-content",
     ".content",
   ];
 
   for (const selector of selectors) {
     const node = document.querySelector(selector);
-    if (node && safeText(node.innerText).length >= 800) {
-      return node;
+    if (node && safeText(node.innerText).length >= 1000) {
+      return { node, selector, usedBodyFallback: false };
     }
   }
-  return document.body;
+
+  return {
+    node: document.body,
+    selector: "body",
+    usedBodyFallback: true,
+  };
 }
 
 function collectHeadingsAndParagraphs(root) {
-  const nodes = root.querySelectorAll("h1, h2, h3, h4, p, li");
+  const nodes = root.querySelectorAll("h1, h2, h3, h4, p");
   const lines = [];
   for (const node of nodes) {
     const text = normalizeText(node.innerText || node.textContent || "");
@@ -363,6 +369,59 @@ function collectHeadingsAndParagraphs(root) {
     lines.push(text);
   }
   return lines;
+}
+
+function collectHeadingTexts(root) {
+  const nodes = root.querySelectorAll("h1, h2, h3, h4");
+  const headings = [];
+  for (const node of nodes) {
+    const text = normalizeText(node.innerText || node.textContent || "");
+    if (!text || text.length < 2) {
+      continue;
+    }
+    headings.push(text);
+    if (headings.length >= 40) {
+      break;
+    }
+  }
+  return headings;
+}
+
+function detectPaywallSignals(fullPageText) {
+  const text = safeText(fullPageText).toLowerCase();
+  const patterns = [
+    "purchase article",
+    "buy this article",
+    "access through your institution",
+    "institutional access",
+    "sign in to access",
+    "login to access",
+    "subscribe to access",
+    "rent or buy",
+    "article metrics",
+    "preview",
+    "abstract only",
+    "get access",
+    "check access",
+    "view full text pdf",
+  ];
+  const hits = [];
+  for (const pattern of patterns) {
+    if (text.includes(pattern)) {
+      hits.push(pattern);
+    }
+  }
+  return hits;
+}
+
+function countParagraphLikeLines(lines) {
+  let count = 0;
+  for (const line of lines) {
+    if (safeText(line).length >= 80) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function collectFigureCaptions(root) {
@@ -412,7 +471,8 @@ function buildFirstPageRaw(title, abstractText, lines) {
 }
 
 function extractCurrentArticlePayload() {
-  const root = pickArticleRoot();
+  const rootInfo = pickArticleRoot();
+  const root = rootInfo.node;
   const title =
     readMetaContent([
       'meta[property="og:title"]',
@@ -437,11 +497,40 @@ function extractCurrentArticlePayload() {
     normalizeText((document.querySelector("abstract, .abstract, #abstract") || {}).innerText || "");
 
   const lines = collectHeadingsAndParagraphs(root);
+  const headingTexts = collectHeadingTexts(root);
   const figures = collectFigureCaptions(root);
   const figureLines = figures.map(([label, caption]) => `Fig.${label}: ${caption}`);
   const fullTextRaw = [...lines, ...figureLines].join("\n");
   const fullText = normalizeText(lines.join(" "));
   const firstPageRaw = buildFirstPageRaw(title, abstractText, lines);
+  const pageBodyText = normalizeText(document.body ? document.body.innerText || document.body.textContent || "" : "");
+  const paywallSignals = detectPaywallSignals(pageBodyText);
+  const lowerHeadings = headingTexts.map((item) => item.toLowerCase());
+
+  const pageSignals = {
+    articleTextLength: fullText.length,
+    fullPageTextLength: pageBodyText.length,
+    rootRatio: pageBodyText.length > 0 ? Number((fullText.length / Math.max(1, pageBodyText.length)).toFixed(4)) : 0,
+    abstractLength: abstractText.length,
+    figureCount: figures.length,
+    paragraphCount: countParagraphLikeLines(lines),
+    headingCount: headingTexts.length,
+    headingTexts,
+    hasIntroduction: lowerHeadings.some((item) => /\bintroduction\b/.test(item)),
+    hasMethods: lowerHeadings.some((item) => /\b(method|methods|materials and methods|methodology)\b/.test(item)),
+    hasResults: lowerHeadings.some((item) => /\b(results|findings)\b/.test(item)),
+    hasDiscussion: lowerHeadings.some((item) => /\b(discussion|conclusion|conclusions)\b/.test(item)),
+    hasAbstract: abstractText.length >= 80 || lowerHeadings.some((item) => /\babstract\b/.test(item)),
+    paywallSignals,
+    rootTag: String(root && root.tagName ? root.tagName : ""),
+    rootSelector: rootInfo.selector,
+    usedBodyFallback: Boolean(rootInfo.usedBodyFallback),
+    hasCitationTitleMeta: Boolean(document.querySelector('meta[name="citation_title"], meta[name="dc.title"]')),
+    hasCitationDoiMeta: Boolean(document.querySelector('meta[name="citation_doi"], meta[property="og:doi"]')),
+    hasCitationJournalMeta: Boolean(
+      document.querySelector('meta[name="citation_journal_title"], meta[name="dc.source"], meta[name="prism.publicationName"]')
+    ),
+  };
 
   return {
     ok: true,
@@ -452,6 +541,7 @@ function extractCurrentArticlePayload() {
     title,
     doi,
     journal,
+    pageSignals,
     parsed: {
       fullText,
       pages: 1,

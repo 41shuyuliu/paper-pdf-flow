@@ -7,6 +7,10 @@ const API_VALIDATE_STATE_KEY = "paper_pdf_flow_api_validate_state";
 const MSG_EXTRACT_CURRENT_ARTICLE = "PPF_EXTRACT_CURRENT_ARTICLE";
 const SOURCE_PDF = "pdf";
 const SOURCE_WEB = "web";
+const PAGE_CLASS_FULLTEXT_READY = "FULLTEXT_READY";
+const PAGE_CLASS_ABSTRACT_ONLY = "ABSTRACT_ONLY";
+const PAGE_CLASS_NON_ARTICLE_PAGE = "NON_ARTICLE_PAGE";
+const PAGE_CLASS_UNSURE = "UNSURE";
 
 const refs = {
   captureView: document.getElementById("captureView"),
@@ -506,6 +510,119 @@ function defaultWebOutputName(title) {
   return `${stem || "current_page_interpretation"}.md`;
 }
 
+function countSectionHits(parsed, pageSignals) {
+  const hits = new Set();
+
+  if (pageSignals && pageSignals.hasIntroduction) hits.add("introduction");
+  if (pageSignals && pageSignals.hasMethods) hits.add("methods");
+  if (pageSignals && pageSignals.hasResults) hits.add("results");
+  if (pageSignals && pageSignals.hasDiscussion) hits.add("discussion");
+
+  return hits.size;
+}
+
+function classifyCurrentArticle(article) {
+  const parsed = article && article.parsed ? article.parsed : {};
+  const pageSignals = article && article.pageSignals ? article.pageSignals : {};
+  const bodyChars = Number(pageSignals.articleTextLength || safeText(parsed.fullText).length || 0);
+  const fullPageChars = Number(pageSignals.fullPageTextLength || 0);
+  const rootRatio = Number(pageSignals.rootRatio || 0);
+  const abstractChars = Number(pageSignals.abstractLength || 0);
+  const figureCount = Number(pageSignals.figureCount || (Array.isArray(parsed.figures) ? parsed.figures.length : 0) || 0);
+  const paragraphCount = Number(pageSignals.paragraphCount || 0);
+  const headingCount = Number(pageSignals.headingCount || 0);
+  const paywallCount = Array.isArray(pageSignals.paywallSignals) ? pageSignals.paywallSignals.length : 0;
+  const sectionHits = countSectionHits(parsed, pageSignals);
+  const hasCitationMeta = Boolean(
+    safeText(article && article.doi ? article.doi : "") ||
+      safeText(article && article.journal ? article.journal : "") ||
+      pageSignals.hasCitationTitleMeta ||
+      pageSignals.hasCitationDoiMeta ||
+      pageSignals.hasCitationJournalMeta
+  );
+  const metaCount = [pageSignals.hasCitationTitleMeta, pageSignals.hasCitationDoiMeta, pageSignals.hasCitationJournalMeta].filter(Boolean).length;
+  const usedBodyFallback = Boolean(pageSignals.usedBodyFallback);
+  const hasAbstract = Boolean(pageSignals.hasAbstract);
+  const hasMethods = Boolean(pageSignals.hasMethods);
+  const hasResults = Boolean(pageSignals.hasResults);
+  const hasDiscussion = Boolean(pageSignals.hasDiscussion);
+  const title = safeText(article && article.title ? article.title : parsed.titleGuess || "");
+  const titleLow = title.toLowerCase();
+  const genericPageTitle =
+    /(journal|journals|support|search results|browse|archive|table of contents|issues|home)/.test(titleLow) && !hasCitationMeta;
+  const looksLikeAbstractOnly = hasAbstract && !hasMethods && !hasResults && !hasDiscussion;
+
+  if ((!title && bodyChars < 1200 && !hasCitationMeta) || genericPageTitle) {
+    return {
+      type: PAGE_CLASS_NON_ARTICLE_PAGE,
+      reason: "当前页面缺少稳定标题和论文元信息，更像普通网页而不是论文页。",
+      metrics: { bodyChars, fullPageChars, rootRatio, abstractChars, sectionHits, figureCount, paragraphCount, headingCount, paywallCount, usedBodyFallback, metaCount },
+    };
+  }
+
+  if (
+    (!hasCitationMeta && sectionHits === 0 && figureCount === 0 && paragraphCount < 6 && bodyChars < 2500) ||
+    (usedBodyFallback && !hasCitationMeta && rootRatio < 0.35 && sectionHits === 0)
+  ) {
+    return {
+      type: PAGE_CLASS_NON_ARTICLE_PAGE,
+      reason: "当前页面正文过少，未识别到论文正文结构，请切换到文章全文页。",
+      metrics: { bodyChars, fullPageChars, rootRatio, abstractChars, sectionHits, figureCount, paragraphCount, headingCount, paywallCount, usedBodyFallback, metaCount },
+    };
+  }
+
+  if (
+    (paywallCount >= 1 && bodyChars < 5000 && sectionHits < 2) ||
+    (hasCitationMeta && looksLikeAbstractOnly && bodyChars < 4000) ||
+    (hasCitationMeta && abstractChars >= 120 && sectionHits === 0 && paragraphCount < 8) ||
+    (hasCitationMeta && usedBodyFallback && looksLikeAbstractOnly && rootRatio < 0.45)
+  ) {
+    return {
+      type: PAGE_CLASS_ABSTRACT_ONLY,
+      reason: "当前页面更像摘要页或受限预览页，暂时无法生成完整论文解读。",
+      metrics: { bodyChars, fullPageChars, rootRatio, abstractChars, sectionHits, figureCount, paragraphCount, headingCount, paywallCount, usedBodyFallback, metaCount },
+    };
+  }
+
+  if (!usedBodyFallback && rootRatio >= 0.45 && bodyChars >= 4500 && sectionHits >= 2 && paragraphCount >= 8 && paywallCount === 0) {
+    return {
+      type: PAGE_CLASS_FULLTEXT_READY,
+      reason: "当前页面已检测到较完整正文结构，可继续生成论文解读。",
+      metrics: { bodyChars, fullPageChars, rootRatio, abstractChars, sectionHits, figureCount, paragraphCount, headingCount, paywallCount, usedBodyFallback, metaCount },
+    };
+  }
+
+  if (!usedBodyFallback && rootRatio >= 0.6 && bodyChars >= 7000 && paragraphCount >= 10 && (sectionHits >= 1 || figureCount >= 2) && paywallCount === 0) {
+    return {
+      type: PAGE_CLASS_FULLTEXT_READY,
+      reason: "当前页面正文较完整，可继续生成论文解读。",
+      metrics: { bodyChars, fullPageChars, rootRatio, abstractChars, sectionHits, figureCount, paragraphCount, headingCount, paywallCount, usedBodyFallback, metaCount },
+    };
+  }
+
+  return {
+    type: PAGE_CLASS_UNSURE,
+    reason: "当前页面提取到的正文结构不足，暂时无法确认是否为完整论文全文页。",
+    metrics: { bodyChars, fullPageChars, rootRatio, abstractChars, sectionHits, figureCount, paragraphCount, headingCount, paywallCount, usedBodyFallback, metaCount },
+  };
+}
+
+function pageClassToUserMessage(classification) {
+  if (!classification) {
+    return "当前页面分析失败。";
+  }
+  if (classification.type === PAGE_CLASS_ABSTRACT_ONLY) {
+    return "当前页面仅检测到摘要或受限预览，无法生成完整论文解读。请打开全文页，或改用 PDF。";
+  }
+  if (classification.type === PAGE_CLASS_NON_ARTICLE_PAGE) {
+    return "当前页面不像论文正文页，请切换到文章全文页面后再试。";
+  }
+  if (classification.type === PAGE_CLASS_UNSURE) {
+    return "当前页面正文结构不足，暂时无法确认是完整全文页。建议切换到正文页或改用 PDF。";
+  }
+  return "当前页面可继续生成论文解读。";
+}
+
 function isRestrictedTabUrl(url) {
   const value = safeText(url).toLowerCase();
   return !value || value.startsWith("chrome://") || value.startsWith("chrome-extension://") || value.startsWith("edge://") || value.startsWith("about:");
@@ -770,15 +887,20 @@ async function handleWebStart() {
     const apiConfig = await getValidatedApiSettings();
     const article = await requestCurrentPageArticle();
     const parsed = article.parsed || {};
-    if (safeText(parsed.fullText).length < 120) {
-      throw new Error("当前页面正文提取过少，请确认已打开论文正文页面。");
+    const classification = classifyCurrentArticle(article);
+    if (classification.type !== PAGE_CLASS_FULLTEXT_READY) {
+      setProgress(0);
+      setMeta(
+        `判定=${classification.type} | 正文=${classification.metrics.bodyChars} | 占比=${classification.metrics.rootRatio} | 章节=${classification.metrics.sectionHits} | 图注=${classification.metrics.figureCount} | rootFallback=${classification.metrics.usedBodyFallback}`
+      );
+      throw new Error(pageClassToUserMessage(classification));
     }
     const outputName = validateOutputName(refs.outputName.value) || defaultWebOutputName(article.title || parsed.titleGuess || "current_page_interpretation");
 
     setProgress(0.18);
     await sleep(30);
     setStatus("正在整理论文结构与方法...");
-    setMeta(`页面=${article.title || "当前页面"} | 模型=${apiConfig.model}`);
+    setMeta(`页面=${article.title || "当前页面"} | 模型=${apiConfig.model} | 判定=FULLTEXT_READY | 占比=${classification.metrics.rootRatio}`);
 
     setProgress(0.45);
     await sleep(30);
